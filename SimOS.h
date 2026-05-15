@@ -4,11 +4,18 @@
 #include <iostream>
 #include <vector>
 #include <deque>
+#include <unordered_map>
 #include <string>
-#include <algorithm>
-#include <cmath>
-#include <stdexcept>
-
+struct FileReadRequest{
+    int PID{0};
+    std::string fileName{""};
+};
+struct MemoryItem{
+    unsigned long long pageNumber;
+    unsigned long long frameNumber;
+    int PID; // PID of the process using this frame of memory
+};
+using MemoryUsage = std::vector<MemoryItem>;
 constexpr int NO_PROCESS{0};
 struct Process {
     int pid;
@@ -17,13 +24,14 @@ struct Process {
 class SimOS {
     public:
         /** Constructor
+        * 
         * @brief Initialize empty ready queue, idle CPU, empty memory book keeping, empty disk structures
-        * @pre pageSize > 0, RAM multiple of page size
-        * @param numberOfDisks: number of disks
-        * @param amountOfRAM: total RAM size
+        * @pre pageSize > 0, RAM multiple of page size. Disks, frame, page enumerations all start from 0.
+        * @param numberOfDisks: number of hard disks
+        * @param amountOfRAM: total RAM size/ memory
         * @param pageSize: each memory page size
         */
-        SimOS(int numberOfDisks, int amountOfRAM, int pageSize);
+        SimOS(int numberOfDisks, unsigned long long amountOfRAM, unsigned int pageSize);
         /**
         * @brief Create a new process
         * @pre Allocate new PID (increment from last).
@@ -31,6 +39,13 @@ class SimOS {
         * @post If CPU idle -> run on CPU; else -> back of ready queue
         */
         void NewProcess();
+
+        void SimFork();
+        void SimExit();
+        void SimWait();
+        void TimerInterrupt();
+        void DiskReadRequest(int diskNumber, std::string fileName);
+        void DiskJobCompleted(int diskNumber);
         /**
         * @brief Access a memory address
         * @pre Running process only (caller must enforce CPU non-idle — see section 10).
@@ -41,30 +56,21 @@ class SimOS {
             * Map page → frame for current PID. 
         * @param address: the address to access
         */
-        void AccessMemoryAddress(int address);
+        void AccessMemoryAddress(unsigned long long address);
         /**
          * @brief Get the memory usage
          * @return the memory usage
          */
-        void GetMemory();
+        int GetCPU();
         /**
          * @brief Get the ready queue
          * @return the ready queue
          */
         std::deque<int> GetReadyQueue();
-        int GetCPU();
-        /**
-         * @brief Get the disk
-         * @param diskNumber: the disk number
-         * @return the disk
-         */
-        void GetDisk(int diskNumber);
-        /**
-         * @brief Get the disk queue
-         * @param diskNumber: the disk number
-         * @return the disk queue
-         */
-        void GetDiskQueue(int diskNumber);
+        MemoryUsage GetMemory();
+        FileReadRequest GetDisk(int diskNumber);
+        std::deque<FileReadRequest> GetDiskQueue(int diskNumber);
+
 
     private:
         int numberOfDisks;

@@ -17,6 +17,7 @@ struct MemoryItem{
 };
 using MemoryUsage = std::vector<MemoryItem>;
 constexpr int NO_PROCESS{0};
+
 struct Process {
     int pid;
     int parentPid;
@@ -34,7 +35,10 @@ class SimOS {
         SimOS(int numberOfDisks, unsigned long long amountOfRAM, unsigned int pageSize);
         /**
         * @brief Create a new process
-        * @pre Allocate new PID (increment from last).
+        * - takes place in the ready-queue or immediately starts using the CPU.
+        * - assigns PIDs to new
+        * processes starting from 1 and increments it by 1 for each new process. 
+        * @pre Allocate new PID (increment from last) + do not resuse pIDs
         * @post Add process to your process table w parent = none or 0 per your design
         * @post If CPU idle -> run on CPU; else -> back of ready queue
         */
@@ -76,6 +80,7 @@ class SimOS {
         int numberOfDisks;
         int amountOfRAM;
         int pageSize;
+        int nextPid;
         int cpuPid;
         std::deque<int> readyQueue;
         std::unordered_map<int, Process> processTable;

@@ -36,8 +36,27 @@ void SimOS::NewProcess () {
         readyQueue.push_back(pid);//add to ready queue / get in line
 }
 
+void SimOS::SimFork() {
+    if (cpuPid == NO_PROCESS) 
+        throw std::logic_error("No running process");
+    
+    const int pid = nextPid++;
+    Process newProcess{pid, cpuPid};
+    processTable[pid] = newProcess;
+    readyQueue.push_back(pid);
+}
 
-
-
-
+void SimOS::SimExit() {
+    if (cpuPid == NO_PROCESS) 
+        throw std::logic_error("No running process");
+    
+    const int pid = cpuPid;
+    const int parentPid = processTable[pid].parentPid;
+    if (parentPid != 0) 
+        readyQueue.push_back(parentPid); // parent becomes runnable
+    processTable.erase(pid); // remove process from table
+    pageTable.erase(pid); // remove page table entries
+    freeFrames.push_back(pageTable[pid]); // add free frames to free frames list
+    cpuPid = NO_PROCESS; // CPU is idle
+}
 

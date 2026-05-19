@@ -33,7 +33,7 @@ class SimOS {
         * @param pageSize: each memory page size
         */
         SimOS(int numberOfDisks, unsigned long long amountOfRAM, unsigned int pageSize);
-        /**
+        /** NewProcess
         * @brief Create a new process
         * - takes place in the ready-queue or immediately starts using the CPU.
         * - assigns PIDs to new
@@ -43,8 +43,23 @@ class SimOS {
         * @post If CPU idle -> run on CPU; else -> back of ready queue
         */
         void NewProcess();
-
+        /** SimFork
+        * @brief The currently running process creates child process 
+        * - Give new PID to child
+        * - Add child to end of ready Q
+        * - Record parent/child relationship.
+        * @pre Running process 
+        * @post new child process exists & is placed at end of ready Q
+        */
         void SimFork();
+        /** SimExit
+        * @brief process that is currently using CPU terminates. 
+        * release the memory immediately. 
+        * parent is already waiting --> process terminates immediately + parent becomes runnable (go to ready Q) 
+        * parent hasn't called wait --> process turns zombie
+        * system implements the cascading termination to avoid appearance of orphans
+        * - Cascading termination: process terminates --> all its descendants terminate w it
+        */
         void SimExit();
         void SimWait();
         void TimerInterrupt();

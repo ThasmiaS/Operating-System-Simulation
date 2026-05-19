@@ -21,6 +21,7 @@ SimOS::SimOS(int numberOfDisks, unsigned long long amountOfRAM, unsigned int pag
     freeFrames.clear();
     waitingProcesses.clear();
     zombieChildren.clear();
+    diskQueues.resize(numberOfDisks);
 
     const int frameCount = amountOfRAM / pageSize;
     for (int f = 0; f < frameCount; ++f) { //every frame is initially available
@@ -147,4 +148,28 @@ void SimOS::TimerInterrupt() {
     // Run next ready process
     cpuPid = readyQueue.front();
     readyQueue.pop_front();
+}
+
+void SimOS::DiskReadRequest(int diskNumber, std::string fileName) {
+    if (cpuPid == NO_PROCESS)
+        throw std::logic_error("No running process");
+
+    // Invalid disk number
+    if (diskNumber < 0 || diskNumber >= numberOfDisks)
+        throw std::out_of_range("Invalid disk number");
+
+    // Create disk read request
+    FileReadRequest request{cpuPid, fileName};
+
+    // Add request to selected disk queue
+    diskQueues[diskNumber].push_back(request);
+
+    // Process blocks waiting for disk
+    cpuPid = NO_PROCESS;
+
+    // Schedule next ready process
+    if (!readyQueue.empty()) {
+        cpuPid = readyQueue.front();
+        readyQueue.pop_front();
+    }
 }

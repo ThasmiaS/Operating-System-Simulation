@@ -77,6 +77,11 @@ class SimOS {
         process moves to end of ready Q
         */
         void TimerInterrupt();
+        /** DiskReadRequest
+        Curr running process requests to read specified file from disk w a given number
+        The process issuing disk reading requests immediately stops using CPU
+            - even if ready Q is empty
+        */
         void DiskReadRequest(int diskNumber, std::string fileName);
         void DiskJobCompleted(int diskNumber);
         /**
@@ -118,7 +123,8 @@ class SimOS {
         std::deque<int> freeFrames;
         std::unordered_set<int> waitingProcesses;
         std::unordered_map<int, std::deque<int>> zombieChildren;
-
+        std::vector<std::deque<FileReadRequest>> diskQueues;
+        
         bool hasZombieChild(int parentPid) const;
         void removeOneZombieChild(int parentPid);
 };

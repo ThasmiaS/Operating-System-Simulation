@@ -72,6 +72,10 @@ class SimOS {
             + other zombies keep waiting for the next wait from parent + parent resumes immediately
         */
         void SimWait();
+        /** TimerInterrupt
+        Interrupt arrives from timer signaling time slice of curr runningprocess is over
+        process moves to end of ready Q
+        */
         void TimerInterrupt();
         void DiskReadRequest(int diskNumber, std::string fileName);
         void DiskJobCompleted(int diskNumber);

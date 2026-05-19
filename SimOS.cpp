@@ -134,3 +134,17 @@ void SimOS::SimWait() {
     else 
         cpuPid = NO_PROCESS;
 }
+
+void SimOS::TimerInterrupt() {
+
+    // Timer interrupt requires a running process
+    if (cpuPid == NO_PROCESS)
+        throw std::logic_error("No running process");
+    
+    // Move current process to back of ready queue
+    readyQueue.push_back(cpuPid);
+
+    // Run next ready process
+    cpuPid = readyQueue.front();
+    readyQueue.pop_front();
+}

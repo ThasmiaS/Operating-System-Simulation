@@ -83,6 +83,10 @@ class SimOS {
             - even if ready Q is empty
         */
         void DiskReadRequest(int diskNumber, std::string fileName);
+        /** DiskJobCompleted
+        disk w a specified # reports that a 1 job is completed
+        served process return to ready Q
+        */
         void DiskJobCompleted(int diskNumber);
         /**
         * @brief Access a memory address
@@ -124,7 +128,7 @@ class SimOS {
         std::unordered_set<int> waitingProcesses;
         std::unordered_map<int, std::deque<int>> zombieChildren;
         std::vector<std::deque<FileReadRequest>> diskQueues;
-        
+
         bool hasZombieChild(int parentPid) const;
         void removeOneZombieChild(int parentPid);
 };

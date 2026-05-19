@@ -173,3 +173,28 @@ void SimOS::DiskReadRequest(int diskNumber, std::string fileName) {
         readyQueue.pop_front();
     }
 }
+
+void SimOS::DiskJobCompleted(int diskNumber) {
+    // Invalid disk number
+    if (diskNumber < 0 || diskNumber >= numberOfDisks)
+        throw std::out_of_range("Invalid disk number");
+    
+    // No active disk job
+    if (diskQueues[diskNumber].empty())
+        throw std::logic_error("No disk job in progress");
+    
+    // Get completed request
+    const FileReadRequest request = diskQueues[diskNumber].front();
+
+    // Remove completed request from disk queue
+    diskQueues[diskNumber].pop_front();
+
+    // If CPU idle, process runs immediately
+    if (cpuPid == NO_PROCESS) 
+        cpuPid = request.PID;
+    else
+        // Otherwise process goes to ready queue
+        readyQueue.push_back(request.PID);
+
+}
+

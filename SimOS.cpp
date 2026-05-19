@@ -16,7 +16,7 @@ SimOS::SimOS(int numberOfDisks, unsigned long long amountOfRAM, unsigned int pag
 
     this->readyQueue.clear(); // no processes waiting to run
     this->cpuPid = NO_PROCESS;
-    framesByProcess.clear();
+    memoryUsage.clear();
     lruList.clear();
     freeFrames.clear();
     waitingProcesses.clear();
@@ -62,18 +62,18 @@ void SimOS::SimExit() {
     const int pid = cpuPid;
     
     // Find all frames owned by this process
-    auto it = framesByProcess.find(pid);
+    auto it = std::find_if(memoryUsage.begin(), memoryUsage.end(), [pid](const MemoryItem &item) { return item.PID == pid; });
 
-    if (it != framesByProcess.end()) { // if process has frames
+    if (it != memoryUsage.end()) { // if process has frames
 
         // Free every frame used by process
-        for (int frame : it->second) {
+        for (const auto &item : memoryUsage) {
 
             // Return frame to free frame list
-            freeFrames.push_back(frame);
+            freeFrames.push_back(item.frameNumber);
 
             // Remove frame from LRU tracking list
-            auto lruIt = std::find(lruList.begin(), lruList.end(), frame);
+            auto lruIt = std::find(lruList.begin(), lruList.end(), item.frameNumber);
 
             if (lruIt != lruList.end())
                 lruList.erase(lruIt);
@@ -81,7 +81,7 @@ void SimOS::SimExit() {
         }
 
         // Remove process - frame mapping
-        framesByProcess.erase(it);
+        memoryUsage.erase(it);
     }
 
     // Remove process from process table
@@ -198,3 +198,55 @@ void SimOS::DiskJobCompleted(int diskNumber) {
 
 }
 
+void SimOS::AccessMemoryAddress(unsigned long long address) {
+
+    if (cpuPid == NO_PROCESS)
+        throw std::logic_error("No running process");
+
+    const unsigned long long pageNumber = address / pageSize;
+
+    // 1. Check if page already in memory
+    for (auto &item : memoryUsage) {
+
+        if (item.PID == cpuPid && item.pageNumber == pageNumber) {
+
+            // update LRU
+            auto it = std::find(lruList.begin(), lruList.end(), item.frameNumber);
+            if (it != lruList.end())
+                lruList.erase(it);
+
+            lruList.push_back(item.frameNumber);
+            return;
+        }
+    }
+
+    // 2. Need a frame
+    int frame;
+
+    if (freeFrames.empty()) {
+
+        // eviction
+        int victimFrame = lruList.front();
+        lruList.pop_front();
+
+        // remove old mapping
+        for (auto it = memoryUsage.begin(); it != memoryUsage.end(); ++it) {
+            if (it->frameNumber == victimFrame) {
+                memoryUsage.erase(it);
+                break;
+            }
+        }
+
+        frame = victimFrame; // reuse freed frame
+    }
+    else {
+
+        auto minIt = std::min_element(freeFrames.begin(), freeFrames.end());
+        frame = *minIt;
+        freeFrames.erase(minIt);
+    }
+
+    // 3. load page
+    memoryUsage.push_back({pageNumber, (unsigned long long)frame, cpuPid});
+    lruList.push_back(frame);
+}

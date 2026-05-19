@@ -88,15 +88,11 @@ class SimOS {
         served process return to ready Q
         */
         void DiskJobCompleted(int diskNumber);
-        /**
-        * @brief Access a memory address
-        * @pre Running process only (caller must enforce CPU non-idle — see section 10).
-        * @post Compute page number for this process from address and pageSize.
-            * If page already in a frame → update LRU; done.
-            * If not resident: if a free frame exists, pick lowest-numbered free frame; 
-                * else evict LRU frame (and if that frame held another process's page, that mapping is removed).
-            * Map page → frame for current PID. 
-        * @param address: the address to access
+        /** access memory address
+        Curre running process wants to access specified logical memory address. 
+        System makes sure corresponding page is loaded in RAM. 
+        If the corresponding page is already in the RAM, its “recently used” info is updated. 
+        When multiple frames are available, system chooses the one w the lower number        
         */
         void AccessMemoryAddress(unsigned long long address);
         /**
@@ -122,7 +118,8 @@ class SimOS {
         int cpuPid;
         std::deque<int> readyQueue;
         std::unordered_map<int, Process> processTable;
-        std::unordered_map<int, std::vector<int>> framesByProcess;
+        std::vector<MemoryItem> memoryUsage;
+        
         std::deque<int> lruList;
         std::deque<int> freeFrames;
         std::unordered_set<int> waitingProcesses;

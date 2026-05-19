@@ -5,6 +5,7 @@
 #include <vector>
 #include <deque>
 #include <unordered_map>
+#include <unordered_set>
 #include <string>
 struct FileReadRequest{
     int PID{0};
@@ -61,6 +62,15 @@ class SimOS {
         * - Cascading termination: process terminates --> all its descendants terminate w it
         */
         void SimExit();
+        /** SimWait
+        process wants to pause + wait for any of its child processes to terminate. 
+        Once wait is over --> process goes to end of  ready Q or CPU. 
+        If zombie child already exists --> process proceeds right away (keeps using CPU) 
+            + the zombie-child disappears
+        
+            If 1+ zombie-child exists --> system uses 1 of them (any!) to immediately resume parent
+            + other zombies keep waiting for the next wait from parent + parent resumes immediately
+        */
         void SimWait();
         void TimerInterrupt();
         void DiskReadRequest(int diskNumber, std::string fileName);
@@ -99,9 +109,14 @@ class SimOS {
         int cpuPid;
         std::deque<int> readyQueue;
         std::unordered_map<int, Process> processTable;
-        std::unordered_map<int, int> pageTable;
+        std::unordered_map<int, std::vector<int>> framesByProcess;
         std::deque<int> lruList;
         std::deque<int> freeFrames;
+        std::unordered_set<int> waitingProcesses;
+        std::unordered_map<int, std::deque<int>> zombieChildren;
+
+        bool hasZombieChild(int parentPid) const;
+        void removeOneZombieChild(int parentPid);
 };
 
 

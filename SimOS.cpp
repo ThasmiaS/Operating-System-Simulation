@@ -1,6 +1,8 @@
 //Thasmia Showmir
 
 #include "SimOS.h"
+#include <algorithm>
+#include <stdexcept>
 
 SimOS::SimOS(int numberOfDisks, unsigned long long amountOfRAM, unsigned int pageSize){
     this->nextPid = 1;
@@ -14,8 +16,11 @@ SimOS::SimOS(int numberOfDisks, unsigned long long amountOfRAM, unsigned int pag
 
     this->readyQueue.clear(); // no processes waiting to run
     this->cpuPid = NO_PROCESS;
-    pageTable.clear();
+    framesByProcess.clear();
+    lruList.clear();
     freeFrames.clear();
+    waitingProcesses.clear();
+    zombieChildren.clear();
 
     const int frameCount = amountOfRAM / pageSize;
     for (int f = 0; f < frameCount; ++f) { //every frame is initially available
@@ -47,16 +52,85 @@ void SimOS::SimFork() {
 }
 
 void SimOS::SimExit() {
+
+    // Cannot terminate if no process is running
     if (cpuPid == NO_PROCESS) 
         throw std::logic_error("No running process");
     
+    // PID of process currently using CPU
     const int pid = cpuPid;
-    const int parentPid = processTable[pid].parentPid;
-    if (parentPid != 0) 
-        readyQueue.push_back(parentPid); // parent becomes runnable
-    processTable.erase(pid); // remove process from table
-    pageTable.erase(pid); // remove page table entries
-    freeFrames.push_back(pageTable[pid]); // add free frames to free frames list
-    cpuPid = NO_PROCESS; // CPU is idle
+    
+    // Find all frames owned by this process
+    auto it = framesByProcess.find(pid);
+
+    if (it != framesByProcess.end()) { // if process has frames
+
+        // Free every frame used by process
+        for (int frame : it->second) {
+
+            // Return frame to free frame list
+            freeFrames.push_back(frame);
+
+            // Remove frame from LRU tracking list
+            auto lruIt = std::find(lruList.begin(), lruList.end(), frame);
+
+            if (lruIt != lruList.end())
+                lruList.erase(lruIt);
+            
+        }
+
+        // Remove process - frame mapping
+        framesByProcess.erase(it);
+    }
+
+    // Remove process from process table
+    processTable.erase(pid);
+
+    // Schedule next ready process
+    if (!readyQueue.empty()) {
+        cpuPid = readyQueue.front();
+        readyQueue.pop_front();
+    }
+    else 
+        // No runnable processes left
+        cpuPid = NO_PROCESS;
 }
 
+void SimOS::SimWait() {
+
+    // Cannot wait if no process is running
+    if (cpuPid == NO_PROCESS)
+        throw std::logic_error("No running process");
+
+    int pid = cpuPid;
+
+    // Look for a zombie child
+    for (auto it = zombieChildren.begin(); it != zombieChildren.end(); ++it) {
+
+        const int childPid = it->first;
+
+        // Check if zombie belongs to current process
+        if (processTable[childPid].parentPid == pid) {
+
+            // Remove zombie child immediately
+            processTable.erase(childPid);
+            zombieChildren.erase(it); // remove zombie child from zombie children list
+
+            // Parent keeps CPU
+            return;
+        }
+    }
+
+    // No zombie child exists:
+    // current process becomes waiting
+    waitingProcesses.insert(pid);
+
+    // Schedule next ready process
+    if (!readyQueue.empty()) {
+
+        cpuPid = readyQueue.front();
+        readyQueue.pop_front();
+    }
+    else 
+        cpuPid = NO_PROCESS;
+}

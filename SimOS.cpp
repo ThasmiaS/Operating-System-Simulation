@@ -1,4 +1,4 @@
-//Thasmia Showmir
+//Name: Thasmia Showmir
 
 #include "SimOS.h"
 #include <algorithm>
@@ -14,7 +14,7 @@ SimOS::SimOS(int numberOfDisks, unsigned long long amountOfRAM, unsigned int pag
     this->amountOfRAM = amountOfRAM;
     this->pageSize = pageSize;
 
-    this->readyQueue.clear(); // no processes waiting to run
+    this->readyQueue.clear(); // ready q empty
     this->cpuPid = NO_PROCESS;
     memoryUsage.clear();
     lruList.clear();
@@ -24,8 +24,8 @@ SimOS::SimOS(int numberOfDisks, unsigned long long amountOfRAM, unsigned int pag
     diskQueues.resize(numberOfDisks);
 
     const int frameCount = amountOfRAM / pageSize;
-    for (int f = 0; f < frameCount; ++f) { //every frame is initially available
-        //fill frame list w [0, 1, 2, 3, ..., frameCount-1]
+    for (int f = 0; f < frameCount; ++f) { // all frames start free
+        // list frames 0,1,2... up to frameCount-1
         freeFrames.push_back(f);
     }
 }
@@ -37,9 +37,9 @@ void SimOS::NewProcess () {
     processTable[pid] = newProcess;
 
     if (cpuPid == NO_PROCESS) 
-        cpuPid = pid; // run immediately on CPU
+        cpuPid = pid; // cpu was idle so run now
     else 
-        readyQueue.push_back(pid);//add to ready queue / get in line
+        readyQueue.push_back(pid);// back of ready Q
 }
 
 void SimOS::SimFork() {
@@ -53,7 +53,7 @@ void SimOS::SimFork() {
 }
 void SimOS::TerminateProcessTree(int pid) {
 
-    // 1. recursively terminate children first
+    // kill child procs first (recursive)
     std::vector<int> children;
 
     for (const auto &entry : processTable) {
@@ -66,9 +66,8 @@ void SimOS::TerminateProcessTree(int pid) {
         TerminateProcessTree(childPid);
     }
 
-    // 2. free memory
-    for (auto it = memoryUsage.begin();
-         it != memoryUsage.end();) {
+    // free up its memory frames
+    for (auto it = memoryUsage.begin();it != memoryUsage.end();) {
 
         if (it->PID == pid) {
 
@@ -87,29 +86,28 @@ void SimOS::TerminateProcessTree(int pid) {
         }
     }
 
-    // 3. remove from ready queue
+    // take pid out of ready Q
     readyQueue.erase(
         std::remove(readyQueue.begin(),
                     readyQueue.end(),
                     pid),
         readyQueue.end());
 
-    // 4. remove from waiting set
+    // not blocked on wait anymore
     waitingProcesses.erase(pid);
 
-    // 5. remove from disk queues
+    // remove from all disk queues
     for (auto &queue : diskQueues) {
 
         queue.erase(
-            std::remove_if(queue.begin(),
-                           queue.end(),
-                           [pid](const FileReadRequest &r) {
-                               return r.PID == pid;
-                           }),
+            std::remove_if(queue.begin(),queue.end(),
+                [pid](const FileReadRequest &r) {
+                    return r.PID == pid;
+            }),
             queue.end());
     }
 
-    // 6. remove zombie records
+    // clean zombie lists
     zombieChildren.erase(pid);
 
     for (auto &[parent, zombies] : zombieChildren) {
@@ -121,7 +119,7 @@ void SimOS::TerminateProcessTree(int pid) {
             zombies.end());
     }
 
-    // 8. remove process itself
+    // finally erase from process table
     processTable.erase(pid);
 }
 void SimOS::SimExit() {
@@ -130,9 +128,7 @@ void SimOS::SimExit() {
 
     int pid = cpuPid;
 
-    // -----------------------------
-    // Cascading termination
-    // -----------------------------
+    // cascade kill whole subtree
     std::vector<int> children;
 
     for (const auto &entry : processTable) {
@@ -145,19 +141,17 @@ void SimOS::SimExit() {
         TerminateProcessTree(childPid);
     }
 
-    // -----------------------------
-    // Free memory frames
-    // -----------------------------
+    // free this procs frames
     for (auto it = memoryUsage.begin();it != memoryUsage.end();) {
 
         if (it->PID == pid) {
-            // free frame
+            // put frame back in free list
             freeFrames.push_back(it->frameNumber);
 
-            // remove from LRU
+            // drop from lru tracking
             lruList.erase(std::remove(lruList.begin(), lruList.end(), it->frameNumber), lruList.end());
 
-            // erase memory entry
+            // remove from memoryUsage
             it = memoryUsage.erase(it);
         }
         else ++it;
@@ -165,33 +159,29 @@ void SimOS::SimExit() {
 
     int parentPid = processTable[pid].parentPid;
 
-    // -----------------------------
-    // Parent already waiting
-    // -----------------------------
+    // parent was in SimWait already
     if (waitingProcesses.count(parentPid)) {
         waitingProcesses.erase(parentPid);
 
-        // parent becomes runnable
+        // wake parent end of ready Q
         readyQueue.push_back(parentPid);
 
-        // child fully removed
+        // child gone for good
         processTable.erase(pid);
     }
     else if (parentPid == 0) {
 
-        // no parent -> fully remove process
+        // root proc just delete it
         processTable.erase(pid);
     }
     else {
     
-        // process becomes zombie
+        // parent didnt wait yet -> zombie
         zombieChildren[parentPid].push_back(pid);
     }
     
 
-    // -----------------------------
-    // Schedule next process
-    // -----------------------------
+    // pick who runs next on cpu
     if (!readyQueue.empty()) {
         cpuPid = readyQueue.front();
         readyQueue.pop_front();
@@ -211,30 +201,29 @@ void SimOS::SimWait() {
     if (zombieIt != zombieChildren.end() &&
         !zombieIt->second.empty()) {
 
-        // reap any zombie child
+        // got a zombie kid reap one
         int childPid = *zombieIt->second.begin();
 
         zombieIt->second.erase(std::remove(zombieIt->second.begin(), zombieIt->second.end(), childPid), zombieIt->second.end());
 
-        // remove zombie list entry if empty
+        // empty zombie list? remove key
         if (zombieIt->second.empty()) {
             zombieChildren.erase(zombieIt);
         }
 
-        // fully remove zombie process
+        // zombie fully gone now
         processTable.erase(childPid);
-        // parent keeps CPU
+        // parent stays on cpu
         return;
     }
 
-    // No zombie child:
-    // process blocks waiting
+    // no zombie yet block
     waitingProcesses.insert(pid);
 
-    // Remove process from CPU
+    // give up cpu
     cpuPid = NO_PROCESS;
 
-    // Schedule next ready process
+    // run somebody else
     if (!readyQueue.empty()) {
         cpuPid = readyQueue.front();
         readyQueue.pop_front();
@@ -245,14 +234,14 @@ void SimOS::SimWait() {
 
 void SimOS::TimerInterrupt() {
 
-    // Timer interrupt requires a running process
+    // need someone on cpu for timer
     if (cpuPid == NO_PROCESS)
         throw std::logic_error("No running process");
     
-    // Move current process to back of ready queue
+    // time slice over ->back of ready Q
     readyQueue.push_back(cpuPid);
 
-    // Run next ready process
+    // next in line gets cpu
     cpuPid = readyQueue.front();
     readyQueue.pop_front();
 }
@@ -261,20 +250,20 @@ void SimOS::DiskReadRequest(int diskNumber, std::string fileName) {
     if (cpuPid == NO_PROCESS)
         throw std::logic_error("No running process");
 
-    // Invalid disk number
+    // bad disk #
     if (diskNumber < 0 || diskNumber >= numberOfDisks)
         throw std::out_of_range("Invalid disk number");
 
-    // Create disk read request
+    // make the read request
     FileReadRequest request{cpuPid, fileName};
 
-    // Add request to selected disk queue
+    // enqueue on that disk (fifo)
     diskQueues[diskNumber].push_back(request);
 
-    // Process blocks waiting for disk
+    // proc waits on disk not cpu
     cpuPid = NO_PROCESS;
 
-    // Schedule next ready process
+    // dispatch next ready if any
     if (!readyQueue.empty()) {
         cpuPid = readyQueue.front();
         readyQueue.pop_front();
@@ -304,12 +293,12 @@ void SimOS::AccessMemoryAddress(unsigned long long address) {
 
     const unsigned long long pageNumber = address / pageSize;
 
-    // 1. Check if page already in memory
+    // page already loaded?
     for (auto &item : memoryUsage) {
 
         if (item.PID == cpuPid && item.pageNumber == pageNumber) {
 
-            // update LRU
+            // bump lru --> was a hit
             auto it = std::find(lruList.begin(), lruList.end(), item.frameNumber);
             if (it != lruList.end())
                 lruList.erase(it);
@@ -319,16 +308,16 @@ void SimOS::AccessMemoryAddress(unsigned long long address) {
         }
     }
 
-    // 2. Need a frame
+    // need to load page into a frame
     int frame;
 
     if (freeFrames.empty()) {
 
-        // eviction
+        // ram full -> kick lru frame
         int victimFrame = lruList.front();
         lruList.pop_front();
 
-        // remove old mapping
+        // clear old page in that frame
         for (auto it = memoryUsage.begin(); it != memoryUsage.end(); ++it) {
             if (it->frameNumber == victimFrame) {
                 memoryUsage.erase(it);
@@ -336,7 +325,7 @@ void SimOS::AccessMemoryAddress(unsigned long long address) {
             }
         }
 
-        frame = victimFrame; // reuse freed frame
+        frame = victimFrame; // use same frame #
     }
     else {
 
@@ -345,7 +334,7 @@ void SimOS::AccessMemoryAddress(unsigned long long address) {
         freeFrames.erase(minIt);
     }
 
-    // 3. load page
+    // map page into frame
     memoryUsage.push_back({pageNumber, (unsigned long long)frame, cpuPid});
     lruList.push_back(frame);
 }
@@ -375,11 +364,11 @@ FileReadRequest SimOS::GetDisk(int diskNumber) {
     if (diskNumber < 0 || diskNumber >= numberOfDisks)
         throw std::out_of_range("Invalid disk number");
 
-    // Disk idle
+    // disk not doing anything
     if (diskQueues[diskNumber].empty())
         return FileReadRequest{0, ""};
 
-    // Current job = front
+    // whats running now is at front
     return diskQueues[diskNumber].front();
 }
 
@@ -394,7 +383,7 @@ SimOS::GetDiskQueue(int diskNumber) {
 
     auto &queue = diskQueues[diskNumber];
 
-    // Skip current job at front
+    // waiting line = everything after front
     for (size_t i = 1; i < queue.size(); ++i) {
         waitingQueue.push_back(queue[i]);
     }

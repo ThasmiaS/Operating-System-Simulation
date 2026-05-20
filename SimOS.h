@@ -1,4 +1,4 @@
-//Thasmia Showmir
+//Name: Thasmia Showmir
 #ifndef SIMOS_H
 #define SIMOS_H
 #include <iostream>

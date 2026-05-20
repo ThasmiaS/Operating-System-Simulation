@@ -51,89 +51,196 @@ void SimOS::SimFork() {
     processTable[pid] = newProcess;
     readyQueue.push_back(pid);
 }
+void SimOS::TerminateProcessTree(int pid) {
 
-void SimOS::SimExit() {
+    // 1. recursively terminate children first
+    std::vector<int> children;
 
-    // Cannot terminate if no process is running
-    if (cpuPid == NO_PROCESS) 
-        throw std::logic_error("No running process");
-    
-    // PID of process currently using CPU
-    const int pid = cpuPid;
-    
-    // Find all frames owned by this process
-    auto it = std::find_if(memoryUsage.begin(), memoryUsage.end(), [pid](const MemoryItem &item) { return item.PID == pid; });
-
-    if (it != memoryUsage.end()) { // if process has frames
-
-        // Free every frame used by process
-        for (const auto &item : memoryUsage) {
-
-            // Return frame to free frame list
-            freeFrames.push_back(item.frameNumber);
-
-            // Remove frame from LRU tracking list
-            auto lruIt = std::find(lruList.begin(), lruList.end(), item.frameNumber);
-
-            if (lruIt != lruList.end())
-                lruList.erase(lruIt);
-            
+    for (const auto &entry : processTable) {
+        if (entry.second.parentPid == pid) {
+            children.push_back(entry.first);
         }
-
-        // Remove process - frame mapping
-        memoryUsage.erase(it);
     }
 
-    // Remove process from process table
+    for (int childPid : children) {
+        TerminateProcessTree(childPid);
+    }
+
+    // 2. free memory
+    for (auto it = memoryUsage.begin();
+         it != memoryUsage.end();) {
+
+        if (it->PID == pid) {
+
+            freeFrames.push_back(it->frameNumber);
+
+            lruList.erase(
+                std::remove(lruList.begin(),
+                            lruList.end(),
+                            it->frameNumber),
+                lruList.end());
+
+            it = memoryUsage.erase(it);
+        }
+        else {
+            ++it;
+        }
+    }
+
+    // 3. remove from ready queue
+    readyQueue.erase(
+        std::remove(readyQueue.begin(),
+                    readyQueue.end(),
+                    pid),
+        readyQueue.end());
+
+    // 4. remove from waiting set
+    waitingProcesses.erase(pid);
+
+    // 5. remove from disk queues
+    for (auto &queue : diskQueues) {
+
+        queue.erase(
+            std::remove_if(queue.begin(),
+                           queue.end(),
+                           [pid](const FileReadRequest &r) {
+                               return r.PID == pid;
+                           }),
+            queue.end());
+    }
+
+    // 6. remove zombie records
+    zombieChildren.erase(pid);
+
+    for (auto &[parent, zombies] : zombieChildren) {
+
+        zombies.erase(
+            std::remove(zombies.begin(),
+                        zombies.end(),
+                        pid),
+            zombies.end());
+    }
+
+    // 8. remove process itself
     processTable.erase(pid);
-
-    // Schedule next ready process
-    if (!readyQueue.empty()) {
-        cpuPid = readyQueue.front();
-        readyQueue.pop_front();
-    }
-    else 
-        // No runnable processes left
-        cpuPid = NO_PROCESS;
 }
-
-void SimOS::SimWait() {
-
-    // Cannot wait if no process is running
+void SimOS::SimExit() {
     if (cpuPid == NO_PROCESS)
         throw std::logic_error("No running process");
 
     int pid = cpuPid;
 
-    // Look for a zombie child
-    for (auto it = zombieChildren.begin(); it != zombieChildren.end(); ++it) {
+    // -----------------------------
+    // Cascading termination
+    // -----------------------------
+    std::vector<int> children;
 
-        const int childPid = it->first;
-
-        // Check if zombie belongs to current process
-        if (processTable[childPid].parentPid == pid) {
-
-            // Remove zombie child immediately
-            processTable.erase(childPid);
-            zombieChildren.erase(it); // remove zombie child from zombie children list
-
-            // Parent keeps CPU
-            return;
+    for (const auto &entry : processTable) {
+        if (entry.second.parentPid == pid) {
+            children.push_back(entry.first);
         }
     }
 
-    // No zombie child exists:
-    // current process becomes waiting
-    waitingProcesses.insert(pid);
+    for (int childPid : children) {
+        TerminateProcessTree(childPid);
+    }
 
-    // Schedule next ready process
+    // -----------------------------
+    // Free memory frames
+    // -----------------------------
+    for (auto it = memoryUsage.begin();it != memoryUsage.end();) {
+
+        if (it->PID == pid) {
+            // free frame
+            freeFrames.push_back(it->frameNumber);
+
+            // remove from LRU
+            lruList.erase(std::remove(lruList.begin(), lruList.end(), it->frameNumber), lruList.end());
+
+            // erase memory entry
+            it = memoryUsage.erase(it);
+        }
+        else ++it;
+    }
+
+    int parentPid = processTable[pid].parentPid;
+
+    // -----------------------------
+    // Parent already waiting
+    // -----------------------------
+    if (waitingProcesses.count(parentPid)) {
+        waitingProcesses.erase(parentPid);
+
+        // parent becomes runnable
+        readyQueue.push_back(parentPid);
+
+        // child fully removed
+        processTable.erase(pid);
+    }
+    else if (parentPid == 0) {
+
+        // no parent -> fully remove process
+        processTable.erase(pid);
+    }
+    else {
+    
+        // process becomes zombie
+        zombieChildren[parentPid].push_back(pid);
+    }
+    
+
+    // -----------------------------
+    // Schedule next process
+    // -----------------------------
     if (!readyQueue.empty()) {
-
         cpuPid = readyQueue.front();
         readyQueue.pop_front();
     }
-    else 
-        cpuPid = NO_PROCESS;
+    else cpuPid = NO_PROCESS;
+    
+}
+
+void SimOS::SimWait() {
+    if (cpuPid == NO_PROCESS)
+        throw std::logic_error("No running process");
+
+    int pid = cpuPid;
+
+    auto zombieIt = zombieChildren.find(pid);
+
+    if (zombieIt != zombieChildren.end() &&
+        !zombieIt->second.empty()) {
+
+        // reap any zombie child
+        int childPid = *zombieIt->second.begin();
+
+        zombieIt->second.erase(std::remove(zombieIt->second.begin(), zombieIt->second.end(), childPid), zombieIt->second.end());
+
+        // remove zombie list entry if empty
+        if (zombieIt->second.empty()) {
+            zombieChildren.erase(zombieIt);
+        }
+
+        // fully remove zombie process
+        processTable.erase(childPid);
+        // parent keeps CPU
+        return;
+    }
+
+    // No zombie child:
+    // process blocks waiting
+    waitingProcesses.insert(pid);
+
+    // Remove process from CPU
+    cpuPid = NO_PROCESS;
+
+    // Schedule next ready process
+    if (!readyQueue.empty()) {
+        cpuPid = readyQueue.front();
+        readyQueue.pop_front();
+    }
+    else cpuPid = NO_PROCESS;
+    
 }
 
 void SimOS::TimerInterrupt() {
@@ -175,27 +282,19 @@ void SimOS::DiskReadRequest(int diskNumber, std::string fileName) {
 }
 
 void SimOS::DiskJobCompleted(int diskNumber) {
-    // Invalid disk number
     if (diskNumber < 0 || diskNumber >= numberOfDisks)
         throw std::out_of_range("Invalid disk number");
-    
-    // No active disk job
+
     if (diskQueues[diskNumber].empty())
         throw std::logic_error("No disk job in progress");
-    
-    // Get completed request
-    const FileReadRequest request = diskQueues[diskNumber].front();
 
-    // Remove completed request from disk queue
+    const int completedPid = diskQueues[diskNumber].front().PID;
     diskQueues[diskNumber].pop_front();
 
-    // If CPU idle, process runs immediately
-    if (cpuPid == NO_PROCESS) 
-        cpuPid = request.PID;
+    if (cpuPid == NO_PROCESS)
+        cpuPid = completedPid;
     else
-        // Otherwise process goes to ready queue
-        readyQueue.push_back(request.PID);
-
+        readyQueue.push_back(completedPid);
 }
 
 void SimOS::AccessMemoryAddress(unsigned long long address) {
@@ -249,4 +348,56 @@ void SimOS::AccessMemoryAddress(unsigned long long address) {
     // 3. load page
     memoryUsage.push_back({pageNumber, (unsigned long long)frame, cpuPid});
     lruList.push_back(frame);
+}
+
+int SimOS::GetCPU() {
+    return cpuPid;
+}
+
+std::deque<int> SimOS::GetReadyQueue() {
+    return readyQueue;
+}
+
+MemoryUsage SimOS::GetMemory() {
+
+    MemoryUsage result = memoryUsage;
+
+    std::sort(result.begin(), result.end(),
+        [](const MemoryItem &a, const MemoryItem &b) {
+            return a.frameNumber < b.frameNumber;
+        });
+
+    return result;
+}
+
+FileReadRequest SimOS::GetDisk(int diskNumber) {
+
+    if (diskNumber < 0 || diskNumber >= numberOfDisks)
+        throw std::out_of_range("Invalid disk number");
+
+    // Disk idle
+    if (diskQueues[diskNumber].empty())
+        return FileReadRequest{0, ""};
+
+    // Current job = front
+    return diskQueues[diskNumber].front();
+}
+
+
+std::deque<FileReadRequest>
+SimOS::GetDiskQueue(int diskNumber) {
+
+    if (diskNumber < 0 || diskNumber >= numberOfDisks)
+        throw std::out_of_range("Invalid disk number");
+
+    std::deque<FileReadRequest> waitingQueue;
+
+    auto &queue = diskQueues[diskNumber];
+
+    // Skip current job at front
+    for (size_t i = 1; i < queue.size(); ++i) {
+        waitingQueue.push_back(queue[i]);
+    }
+
+    return waitingQueue;
 }

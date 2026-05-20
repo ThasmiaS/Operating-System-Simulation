@@ -1,13 +1,6 @@
 #include "SimOS.h"
+#include "autograder.cpp"  
 
 int main() {
-    SimOS simOS(1, 1024, 1024);
-    simOS.NewProcess();
-    simOS.AccessMemoryAddress(0);
-    simOS.GetMemory();
-    simOS.GetReadyQueue();
-    simOS.GetCPU();
-    simOS.GetDisk(0);
-    simOS.GetDiskQueue(0);
-    return 0;
+    return Test_Public() == TEST_PASS ? 0 : 1;
 }

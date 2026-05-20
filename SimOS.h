@@ -95,19 +95,41 @@ class SimOS {
         When multiple frames are available, system chooses the one w the lower number        
         */
         void AccessMemoryAddress(unsigned long long address);
-        /**
-         * @brief Get the memory usage
-         * @return the memory usage
+        /** GetCPU
+         * GetCPU returns PID of curr process currently using CPU. 
+         * If CPU is idle it returns NO_PROCESS
          */
         int GetCPU();
-        /**
-         * @brief Get the ready queue
-         * @return the ready queue
-         */
+        /** GetReadyQueue
+        returns std::deque w PIDs of processes in ready Q where element in front corresponds start of ready Q. 
+        The currently running process doesn't appear in ready Q
+        */
         std::deque<int> GetReadyQueue();
+        /** GetMemory
+        returns MemoryUsage vector describing all currently used frames of RAM.
+        Remember, terminated "zombie" processes don't use memory, so they don't contribute to
+        memory usage.
+        MemoryItems appear in the MemoryUsage vector in the order from low to
+        high frame number
+        */
         MemoryUsage GetMemory();
+        /** GetDisk
+        returns an object with PID of process served by specified disk + name of
+        the file read for that process. 
+        If disk is idle, GetDisk returns default
+        FileReadRequest object (with PID 0 and empty string in fileName)
+        */
         FileReadRequest GetDisk(int diskNumber);
+        /** GetDiskQueue
+        returns I/O-queue of the specified disk starting from the 'next to be
+        served' process. 
+        The currently served process doesn't appear in this queue.
+        */
         std::deque<FileReadRequest> GetDiskQueue(int diskNumber);
+        /** TerminateProcessTree
+        terminates a process and all its descendants
+        */
+        void TerminateProcessTree(int pid);
 
 
     private:
@@ -126,8 +148,6 @@ class SimOS {
         std::unordered_map<int, std::deque<int>> zombieChildren;
         std::vector<std::deque<FileReadRequest>> diskQueues;
 
-        bool hasZombieChild(int parentPid) const;
-        void removeOneZombieChild(int parentPid);
 };
 
 

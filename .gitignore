@@ -1,0 +1,7 @@
+# Compiled output — rebuild with the command in the README instead.
+runme
+*.o
+*.out
+a.out
+
+.DS_Store
